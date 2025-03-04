@@ -8,7 +8,7 @@
 # Должен иметь команду "Help" для вывода справки по командам.
 # Получение ключа API сделай из отдельного файла APIKey, чтобы не загружать его на github.
 
-from APIKey import API_KEY
+from APIKey1 import API_KEY
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import (
     ApplicationBuilder,
