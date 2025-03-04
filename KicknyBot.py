@@ -6,7 +6,9 @@
 # Должен иметь команду администратора "VotesMonoLimit" для установки числа голосов для принятия решения единогласно.
 # Должен иметь команду администратора "TimeLimit" для установки максимальной длительности в минутах сбора голосов.
 # Должен иметь команду "Help" для вывода справки по командам.
+# Получение ключа API сделай из отдельного файла APIKey, чтобы не загружать его на github.
 
+from APIKey import API_KEY
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import (
     ApplicationBuilder,
@@ -289,7 +291,7 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
     )
 
 def main() -> None:
-    application = ApplicationBuilder().token("7067650881:AAHOKBQdRqa0YU9eMVjOnbsm-w6rVwbEJno").build()
+    application = ApplicationBuilder().token(API_KEY).build()
     
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("VotesLimit", set_votes_limit))
