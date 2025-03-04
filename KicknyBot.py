@@ -115,7 +115,9 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     target_user = update.message.reply_to_message.from_user
     chat_id = update.effective_chat.id
     initiator_id = update.effective_user.id
-    
+    if initiator_id == target_user.id:
+        await update.message.reply_text("Вы не можете начать голосование против себя.")
+        return    
     if await is_admin(chat_id, target_user.id, context):
         await update.message.reply_text("Нельзя голосовать против администратора")
         return
@@ -184,7 +186,9 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
         return
     
     user_id = query.from_user.id
-    
+    if user_id == target_user_id:
+        await query.answer("Вы не можете голосовать в отношении себя.")
+        return   
     if action == "cancel":
         if user_id != vote_data["initiator_id"]:
             await query.answer("Только инициатор может отменить")
