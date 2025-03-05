@@ -7,6 +7,9 @@
 # Должен иметь команду администратора "TimeLimit" для установки максимальной длительности в минутах сбора голосов.
 # Должен иметь команду "Help" для вывода справки по командам.
 # Получение ключа API сделай из отдельного файла APIKey, чтобы не загружать его на github.
+# При нажатии кнопки голосования добавь в ее надпись символ "+", а у других кнопок удали его, если ранее был добавлен
+
+# https://github.com/tormozit/KicknyBot
 
 from APIKey1 import API_KEY # Example of file content: API_KEY = "722222222:AAE3-2222222222222222222222222222222"
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
@@ -42,7 +45,7 @@ async def is_admin(chat_id: int, user_id: int, context: CallbackContext) -> bool
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     help_text = f"""
-    Этот бот позволяет наказывать пользователя временным запретом писать или баном навсегда через голосование с возможностью отмены.
+    Этот бот позволяет наказывать пользователя временным запретом писать или баном навсегда через голосование с возможностью отмены. Тех. поддержка https://github.com/tormozit/KicknyBot
     Список команд:
     Ответьте на сообщение пользователя строкой @{context.bot.username} для начала голосования за его наказание
     /VotesLimit [количество] - Установить необходимое число голосов (только админы) = {get_votes_limit(update.effective_chat.id)}
@@ -116,7 +119,7 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     initiator_id = update.effective_user.id
     if initiator_id == target_user.id:
-        await update.message.reply_text("Вы не можете начать голосование против себя.")
+        await update.message.reply_text("Нельзя голосование против себя.")
         return    
     if await is_admin(chat_id, target_user.id, context):
         await update.message.reply_text("Нельзя голосовать против администратора")
@@ -187,7 +190,7 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
     
     user_id = query.from_user.id
     if user_id == target_user_id:
-        await query.answer("Вы не можете голосовать в отношении себя.")
+        await query.answer("Нельзя голосовать против себя.")
         return   
     if action == "cancel":
         if user_id != vote_data["initiator_id"]:
@@ -213,8 +216,24 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
     
     remaining = (vote_data["time_limit"] - (datetime.now() - vote_data["start_time"]).total_seconds()) // 60
     
+    # Обновляем текст всех кнопок
+    keyboard = query.message.reply_markup.inline_keyboard
+    new_keyboard = []
+    for row in keyboard:
+        new_row = []
+        for button in row:
+            # Убираем "+" из всех кнопок
+            button_text = button.text.replace(" +", "")
+            if button.callback_data == query.data:
+                # Добавляем "+" к выбранной кнопке
+                button_text = f"{button_text} +"
+            new_button = InlineKeyboardButton(button_text, callback_data=button.callback_data)
+            new_row.append(new_button)
+        new_keyboard.append(new_row)
+    
     text = FullStatus(vote_data, remaining)
-    await query.edit_message_text(text, reply_markup=query.message.reply_markup)
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(new_keyboard))
+    
     if (False
         or vote_data["votes_day"] == vote_data["votes_limit"] 
         or vote_data["votes_day"] == vote_data["votes_mono_limit"] and vote_data["votes_forever"] == 0 and vote_data["votes_forgive"] == 0):
