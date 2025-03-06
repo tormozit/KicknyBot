@@ -255,13 +255,40 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
         await end_vote(context, vote_id)
 
 def FullStatus(vote_data, remaining):
+    def format_votes(current, mono_limit, limit, other1, other2):
+        if other1 == 0 and other2 == 0:
+            return f"{current}/{mono_limit}"
+        return f"{current}/{limit}"
+
+    day_text = format_votes(
+        vote_data['votes_day'],
+        vote_data['votes_mono_limit'],
+        vote_data['votes_limit'],
+        vote_data['votes_forever'],
+        vote_data['votes_forgive']
+    )
+
+    forever_text = format_votes(
+        vote_data['votes_forever'],
+        vote_data['votes_mono_limit'],
+        vote_data['votes_limit'],
+        vote_data['votes_day'],
+        vote_data['votes_forgive']
+    )
+
+    forgive_text = format_votes(
+        vote_data['votes_forgive'],
+        vote_data['votes_mono_limit'],
+        vote_data['votes_limit'],
+        vote_data['votes_day'],
+        vote_data['votes_forever']
+    )
+
     text = (
         f"🔨 Голосование за наказание {vote_data['target_username']}\n"
-        f"{vote_data['votes_day']} за читателя (запрет писать) 24ч\n"
-        f"{vote_data['votes_forever']} за бан (лишить доступа) навсегда\n"
-        f"{vote_data['votes_forgive']} за прощение\n"
-        f"Необходимо голосов: {vote_data['votes_limit']} или единогласно {vote_data['votes_mono_limit']}\n"
-        f"Осталось: {int(remaining)} мин"
+        f"{day_text} за читателя (запрет писать) 24ч\n"
+        f"{forever_text} за бан (лишить доступа) навсегда\n"
+        f"{forgive_text} за прощение\n"
     )
     return text
 

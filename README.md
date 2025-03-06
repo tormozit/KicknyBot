@@ -18,3 +18,4 @@
 Для запуска скрипта требуется 
 1. Установить python 3.7+
 2. Установить библиотеку интеграции с Telegram командой "pip install python-telegram-bot"
+3. Запустить бота (Run.Bat на ОС Windows)
