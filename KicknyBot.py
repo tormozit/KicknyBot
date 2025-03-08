@@ -1,6 +1,7 @@
 # Телеграм бот на языке python для голосования за бан пользователя с возможность отменить голосование и вариантами "Читатель на 24ч", "Бан навегда", "Простить".
 # Голосование начинается путем ответа на сообщение пользователя с указанием @<ИмяБота>. Если принятое решение не "Простить", то сообщение, ответом на которое начато голосование, удаляется.
-# В сообщении о результате голосования должны быть перечислены все проголосовавшие за принятое решение и их количество.
+# В сообщении о результате голосования должны быть перечислены через запятую все проголосовавшие за принятое решение участники и их количество.
+# Каждый проголосовавший пользователь был обозначение гиперссылкой, которая бы открывала его профиль.
 # Отменить голосование может только инициатор. Пользователю запрещено голосовать в отношении себя.
 # Должен иметь команду администратора "VotesLimit" для установки числа голосов для принятия решения. 
 # Должен иметь команду администратора "VotesMonoLimit" для установки числа голосов для принятия решения единогласно.
@@ -330,15 +331,27 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
         if vote_type == result:
             try:
                 user = await context.bot.get_chat_member(chat_id, user_id)
-                voters.append("@"+user.user.username)
+                name = user.user.first_name or f"id{user_id}"
+                # Формируем ссылку с приоритетом для username
+                if user.user.username:
+                    link = f'<a href="tg://user?id={user_id}">@{user.user.username}</a>'
+                else:
+                    link = f'<a href="tg://user?id={user_id}">{name}</a>'
+                voters.append(link)
             except Exception as e:
                 logger.error(f"Ошибка получения пользователя {user_id}: {e}")
-                voters.append(f"id{user_id}")
-    voters_text = f"Проголосовали({len(voters)}): " + ", ".join(voters)
+                # Ссылка по ID если пользователь не найден
+                voters.append(f'<a href="tg://user?id={user_id}">id{user_id}</a>')
+
+    voters_text = ", ".join(voters)
     await context.bot.edit_message_text(
-        f"Пользователь {vote_data['target_username']} {result_message}. " + voters_text,
+        text=(
+            f"Пользователь {vote_data['target_username']} {result_message}.\n"
+            f"Проголосовавшие ({len(voters)}): {voters_text}"
+        ),
         chat_id=chat_id,
         message_id=message_id,
+        parse_mode="HTML"  # Обязательно включаем HTML
     )
 
 def main() -> None:
