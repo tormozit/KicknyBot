@@ -140,9 +140,15 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton("Отменить голосование", callback_data=f"vote:cancel:{target_user.id}")],
     ]
     message = await update.message.reply_text(
-        f"🔨 Начато голосование за наказание пользователя {target_user.name}\n"
-        f"Необходимо голосов: {votes_limit} или единогласно {votes_mono_limit}\n",
+        titleText(
+            userId=target_user.id,
+            fullUserName=target_user.full_name,
+            nickname=target_user.username,
+            votes_mono_limit=votes_mono_limit,
+            votes_limit=votes_limit
+        ),
         reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
     )
     
     vote_id = (chat_id, message.message_id)
@@ -150,6 +156,7 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
         "initiator_id": initiator_id,
         "target_user_id": target_user.id,
         "target_username": target_user.name,
+        "target_full_name": target_user.full_name,
         "votes_day": 0,
         "votes_forever": 0,
         "votes_forgive": 0,
@@ -164,6 +171,14 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     context.job_queue.run_once(
         end_vote, time_limit, data=vote_id, name=str(vote_id)
     )
+
+def titleText(userId: int, fullUserName: str, nickname: str, votes_mono_limit: int, votes_limit: int) -> str:
+    user_link = create_user_link(
+        user_id=userId,
+        fullUserName=fullUserName,
+        nickname=nickname
+    )
+    return f"🔨 Голосуем за наказание пользователя {user_link} с лимитом {votes_limit} или единогласно {votes_mono_limit}.\n"
 
 def get_votes_limit(chat_id):
     return chat_settings.get(chat_id, {}).get("votes_limit", 10)
@@ -187,7 +202,7 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
     vote_data = active_votes.get(vote_id)
     
     if not vote_data or vote_data["target_user_id"] != target_user_id:
-        await query.edit_message_text("Голосование завершено")
+        await query.edit_message_text("Голосование остановлено по технической причине.")
         return
     
     user_id = query.from_user.id
@@ -233,8 +248,11 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
             new_row.append(new_button)
         new_keyboard.append(new_row)
     
-    text = FullStatus(vote_data, remaining)
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(new_keyboard))
+    await query.edit_message_text(
+        FullStatus(vote_data, remaining), 
+        reply_markup=InlineKeyboardMarkup(new_keyboard), 
+        parse_mode="HTML"
+    )
     
     if (False
         or vote_data["votes_day"] == vote_data["votes_limit"] 
@@ -287,7 +305,7 @@ def FullStatus(vote_data, remaining):
     )
 
     text = (
-        f"🔨 Голосование за наказание {vote_data['target_username']}\n"
+        titleText(vote_data['target_user_id'], vote_data['target_full_name'], vote_data['target_username'], vote_data['votes_mono_limit'], vote_data['votes_limit']) +
         f"{day_text} за читателя (запрет писать) 24ч\n"
         f"{forever_text} за бан (лишить доступа) навсегда\n"
         f"{forgive_text} за прощение\n"
@@ -331,28 +349,36 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
         if vote_type == result:
             try:
                 user = await context.bot.get_chat_member(chat_id, user_id)
-                name = user.user.first_name or f"id{user_id}"
-                # Формируем ссылку с приоритетом для username
-                if user.user.username:
-                    link = f'<a href="tg://user?id={user_id}">@{user.user.username}</a>'
-                else:
-                    link = f'<a href="tg://user?id={user_id}">{name}</a>'
-                voters.append(link)
+                voters.append(create_user_link(
+                    user_id=user_id,
+                    fullUserName=user.user.first_name,
+                    nickname=user.user.username
+                ))
             except Exception as e:
                 logger.error(f"Ошибка получения пользователя {user_id}: {e}")
-                # Ссылка по ID если пользователь не найден
-                voters.append(f'<a href="tg://user?id={user_id}">id{user_id}</a>')
+                voters.append(create_user_link(
+                    user_id=user_id,
+                    fullUserName=f"id{user_id} (не в чате)",
+                    nickname=None
+                ))
 
     voters_text = ", ".join(voters)
+    userLink = create_user_link(vote_data['target_user_id'], vote_data['target_full_name'], vote_data['target_username'])
     await context.bot.edit_message_text(
         text=(
-            f"Пользователь {vote_data['target_username']} {result_message}.\n"
-            f"Проголосовавшие ({len(voters)}): {voters_text}"
+            f"Пользователь {userLink} {result_message}.\n"
+            f"За это голосовали ({len(voters)}): {voters_text}"
         ),
         chat_id=chat_id,
         message_id=message_id,
-        parse_mode="HTML"  # Обязательно включаем HTML
+        parse_mode="HTML"
     )
+
+def create_user_link(user_id: int, fullUserName: str,  nickname: str) -> str:
+    """Создает HTML-ссылку на профиль пользователя"""
+    # if username:
+    #     return f'<a href="tg://user?id={user_id}">@{username}</a>'
+    return f'<a href="tg://user?id={user_id}">{fullUserName or f"id{user_id}"}</a>'
 
 def main() -> None:
     application = ApplicationBuilder().token(API_KEY).build()
