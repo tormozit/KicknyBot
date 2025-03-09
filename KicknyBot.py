@@ -121,7 +121,7 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     initiator_id = update.effective_user.id
     if initiator_id == target_user.id:
-        await update.message.reply_text("Нельзя голосование против себя.")
+        await update.message.reply_text("Нельзя голосовать против себя.")
         return    
     if await is_admin(chat_id, target_user.id, context):
         await update.message.reply_text("Нельзя голосовать против администратора")
