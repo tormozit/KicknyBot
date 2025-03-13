@@ -133,8 +133,8 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     
     keyboard = [
         [
-            InlineKeyboardButton("⏳ Читатель 24ч", callback_data=f"vote:day:{target_user.id}"),
-            InlineKeyboardButton("♾️ Бан навсегда", callback_data=f"vote:forever:{target_user.id}"),
+            InlineKeyboardButton("Читатель 24ч", callback_data=f"vote:day:{target_user.id}"),
+            InlineKeyboardButton("Бан навсегда", callback_data=f"vote:forever:{target_user.id}"),
             InlineKeyboardButton("Простить", callback_data=f"vote:forgive:{target_user.id}"),
         ],
         [InlineKeyboardButton("Отменить голосование", callback_data=f"vote:cancel:{target_user.id}")],
@@ -168,10 +168,12 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
         "original_message_id": update.message.reply_to_message.message_id,  # Сохраняем ID исходного сообщения
     }
     
-    context.job_queue.run_once(
+    # context.job_queue.run_once(
+    #     end_vote, time_limit, data=vote_id, name=str(vote_id)
+    # )
+    context.application.job_queue.run_once(  # Используем application.job_queue
         end_vote, time_limit, data=vote_id, name=str(vote_id)
     )
-
 def titleText(userId: int, fullUserName: str, nickname: str, votes_mono_limit: int, votes_limit: int) -> str:
     user_link = create_user_link(
         user_id=userId,
@@ -240,10 +242,10 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
         new_row = []
         for button in row:
             # Убираем "+" из всех кнопок
-            button_text = button.text.replace(" +", "")
+            button_text = button.text.replace("+ ", "")
             if button.callback_data == query.data:
                 # Добавляем "+" к выбранной кнопке
-                button_text = f"{button_text} +"
+                button_text = f"+ {button_text}"
             new_button = InlineKeyboardButton(button_text, callback_data=button.callback_data)
             new_row.append(new_button)
         new_keyboard.append(new_row)
@@ -382,7 +384,6 @@ def create_user_link(user_id: int, fullUserName: str,  nickname: str) -> str:
 
 def main() -> None:
     application = ApplicationBuilder().token(API_KEY).build()
-    
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("VotesLimit", set_votes_limit))
     application.add_handler(CommandHandler("VotesMonoLimit", set_votes_mono_limit))
