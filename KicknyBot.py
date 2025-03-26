@@ -1,7 +1,7 @@
 # Телеграм бот на языке python для голосования за бан пользователя с возможность отменить голосование и вариантами "Читатель 24ч", "Бан навегда", "Простить".
 # Голосование начинается путем ответа на сообщение пользователя с указанием @<ИмяБота>. Если принятое решение не "Простить", то сообщение, ответом на которое начато голосование, удаляется.
 # В сообщении о результате голосования должны быть перечислены через запятую все проголосовавшие за принятое решение участники и их количество.
-# Каждое упоминание пользователя должно быть обозначено гиперссылкой с текстом его полного имени и ссылкой на его профиль.
+# Каждое упоминание пользователя должно быть обозначено гиперссылкой с текстом его полного имени, обрезанным до 15 символов, и ссылкой на его профиль. Если в тексте гиперссылки есть картинки, то их надо удалить и сократить его до 5 символов.
 # Отменить голосование может только инициатор. Пользователю запрещено голосовать в отношении себя.
 # Должен иметь команду администратора "VotesLimit" для установки числа голосов для принятия решения. 
 # Должен иметь команду администратора "VotesMonoLimit" для установки числа голосов для принятия решения единогласно.
@@ -325,7 +325,7 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
         result_message = "прощен"
     elif result == 'forever':
         await context.bot.ban_chat_member(chat_id, vote_data["target_user_id"])
-        result_message = "забанен (лишен доступа) навсегда. Восстановить его может администратор в настройках группы."
+        result_message = "забанен (лишен доступа) навсегда. Восстановить его может администратор в настройках группы"
         try:
             await context.bot.delete_message(chat_id, vote_data["original_message_id"])
         except Exception as e:
@@ -376,11 +376,23 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
         parse_mode="HTML"
     )
 
-def create_user_link(user_id: int, fullUserName: str,  nickname: str) -> str:
-    """Создает HTML-ссылку на профиль пользователя"""
-    # if username:
-    #     return f'<a href="tg://user?id={user_id}">@{username}</a>'
-    return f'<a href="tg://user?id={user_id}">{fullUserName or f"id{user_id}"}</a>'
+def create_user_link(user_id: int, fullUserName: str, nickname: str) -> str:
+    """Создает HTML-ссылку с адаптивным сокращением имени"""
+    # Набор разрешенных символов
+    ALLOWED_CHARS = set("_- .")  # Символы, которые не являются буквами/цифрами
+    is_valid = lambda c: c.isalnum() or c in ALLOWED_CHARS
+    
+    # Проверка на наличие спецсимволов/эмодзи
+    has_special = any(not is_valid(c) for c in fullUserName)
+    
+    # Очистка имени с использованием единого условия
+    clean_name = "".join([c if is_valid(c) else "" for c in fullUserName]).strip()
+    
+    # Определение лимита и форматирование имени
+    max_len = 5 if has_special else 15
+    short_name = f"{clean_name[:max_len]}…" if len(clean_name) > max_len else clean_name
+    
+    return f'<a href="tg://user?id={user_id}">{short_name or f"id{user_id}"}</a>'
 
 def main() -> None:
     application = ApplicationBuilder().token(API_KEY).build()
