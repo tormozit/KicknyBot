@@ -366,10 +366,10 @@ def FullStatus(vote_data, remaining):
     text = (
         titleText(vote_data['target_user_id'], vote_data['target_full_name'], vote_data['target_username'], vote_data['votes_mono_limit'], vote_data['votes_limit']) +
         f"{day_text} за читателя (запрет писать) 24ч\n"
-        f"{forever_text} за бан (лишить доступа) навсегда\n"
-        f"{forgive_text} за прощение\n"
         f"{perm_reader_text} за читателя (запрет писать) навсегда\n"
+        f"{forever_text} за бан (лишить доступа) навсегда\n"
         f"{delete_message_text} за удаление сообщения\n"
+        f"{forgive_text} за прощение\n"
     )
     return text
 
