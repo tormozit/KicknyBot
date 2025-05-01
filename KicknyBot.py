@@ -214,7 +214,7 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
     data = query.data.split(":")
     if len(data) != 3 or data[0] != "vote":
         return
-    
+     
     action, target_user_id = data[1], int(data[2])
     vote_id = (query.message.chat_id, query.message.message_id)
     vote_data = active_votes.get(vote_id)
@@ -610,10 +610,10 @@ def main() -> None:
             start_vote
             )
     )
-    
+    application.add_handler(CallbackQueryHandler(handle_vote))
+
     # Не заработало. Режим приветствия (вход нового участника)
     # application.add_handler(ChatMemberHandler(greet_new_member, ChatMemberHandler.CHAT_MEMBER))
-    # application.add_handler(CallbackQueryHandler(handle_vote))
     # application.add_handler(CallbackQueryHandler(handle_verification_button, pattern="^verify:"))
     # application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_verification_answer))
 
