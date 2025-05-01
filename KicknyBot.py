@@ -1,4 +1,4 @@
-# Телеграм бот на языке python для голосования за бан пользователя с возможность отменить голосование и вариантами "Читатель 24ч", "Бан навегда", "Простить".
+# Телеграм бот на языке python для голосования за бан пользователя с возможность отменить голосование и вариантами "Читатель 24ч", "Бан навегда", "Простить", "Читатель навсегда", "Удалить сообщение".
 # Голосование начинается путем ответа на сообщение пользователя с указанием @<ИмяБота>. Если принятое решение не "Простить", то сообщение, ответом на которое начато голосование, удаляется.
 # В сообщении о результате голосования должны быть перечислены через запятую все проголосовавшие за принятое решение участники и их количество.
 # Каждое упоминание пользователя должно быть обозначено гиперссылкой с текстом его полного имени, обрезанным до 15 символов, и ссылкой на его профиль. Если в тексте гиперссылки есть картинки, то их надо удалить и сократить его до 5 символов.
@@ -10,6 +10,11 @@
 # Получение ключа API сделай из отдельного файла APIKey, чтобы не загружать его на github.
 # При нажатии кнопки голосования вставь в начало ее текста символ "+", а у других кнопок удали его.
 # Число голосов по каждому варианту отображалось в формате: если нет голосов за другие варианты, то "<Голосов>/<Необходимо голосов единогласно>", иначе "<Голосов>/<Необходимо голосов>".
+#
+# При вступлении в группу нового участника нужно сразу запретить ему писать сообщения и отправить сообщение "Привет, <Представление участника>! Чтобы писать в чате, нужно доказать что ты не бот." с кнопкой "Пройти тест". 
+# <Представление участника> должно быть гиперссылкой через функцию create_user_link. Если за 10 секунд он не нажал кнопку, то запретить ему писать сообщения и удалить сообщение с кнопкой.
+# При нажатии на эту кнопку новым участником, он в приватном чате получает от бота сообщение "Введи цифрой номер текущего дня недели по Московскому времени", а сообщение в группе удаляется. 
+# Если за 30 секунд он получает правильный ответ, то разрешить ему писать сообщения в группе.
 
 # https://github.com/tormozit/KicknyBot
 
@@ -25,6 +30,10 @@ from telegram.ext import (
     MessageHandler,
 )
 from datetime import datetime, timedelta
+from telegram.constants import ChatMemberStatus
+from telegram.ext import ChatMemberHandler
+from datetime import timezone
+from telegram.constants import ChatType
 import logging
 
 # Настройка логирования
@@ -36,6 +45,7 @@ logger = logging.getLogger(__name__)
 # Хранение данных
 active_votes = {}
 chat_settings = {}
+verification_tasks = {}
 
 async def is_admin(chat_id: int, user_id: int, context: CallbackContext) -> bool:
     try:
@@ -134,10 +144,14 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
     keyboard = [
         [
             InlineKeyboardButton("Читатель 24ч", callback_data=f"vote:day:{target_user.id}"),
-            InlineKeyboardButton("Бан навсегда", callback_data=f"vote:forever:{target_user.id}"),
-            InlineKeyboardButton("Простить", callback_data=f"vote:forgive:{target_user.id}"),
+            InlineKeyboardButton("Читатель ∞", callback_data=f"vote:perm_reader:{target_user.id}"),
+            InlineKeyboardButton("Бан ∞", callback_data=f"vote:forever:{target_user.id}"),
         ],
-        [InlineKeyboardButton("Отменить голосование", callback_data=f"vote:cancel:{target_user.id}")],
+        [
+            InlineKeyboardButton("Удалить сообщение", callback_data=f"vote:delete_message:{target_user.id}"),
+            InlineKeyboardButton("Простить", callback_data=f"vote:forgive:{target_user.id}"),
+            InlineKeyboardButton("Отменить", callback_data=f"vote:cancel:{target_user.id}")
+        ]
     ]
     message = await update.message.reply_text(
         titleText(
@@ -160,6 +174,8 @@ async def start_vote(update: Update, context: CallbackContext) -> None:
         "votes_day": 0,
         "votes_forever": 0,
         "votes_forgive": 0,
+        "votes_perm_reader": 0,
+        "votes_delete_message": 0,
         "voters": {},
         "start_time": datetime.now(),
         "votes_limit": votes_limit,
@@ -268,6 +284,22 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
         or vote_data["votes_forgive"] == vote_data["votes_limit"] 
         or vote_data["votes_forgive"] == vote_data["votes_mono_limit"] and vote_data["votes_day"] == 0 and vote_data["votes_forever"] == 0):
         result = 'forgive'
+    elif (False
+        or vote_data["votes_perm_reader"] == vote_data["votes_limit"] 
+        or vote_data["votes_perm_reader"] == vote_data["votes_mono_limit"] 
+            and vote_data["votes_day"] == 0 
+            and vote_data["votes_forever"] == 0 
+            and vote_data["votes_forgive"] == 0
+            and vote_data["votes_delete_message"] == 0):
+        result = "perm_reader"
+    elif (False
+        or vote_data["votes_delete_message"] == vote_data["votes_limit"] 
+        or vote_data["votes_delete_message"] == vote_data["votes_mono_limit"] 
+            and vote_data["votes_day"] == 0 
+            and vote_data["votes_forever"] == 0 
+            and vote_data["votes_forgive"] == 0
+            and vote_data["votes_perm_reader"] == 0):
+        result = 'delete_message'
     else:
         result = None
     if result:
@@ -277,8 +309,8 @@ async def handle_vote(update: Update, context: CallbackContext) -> None:
         await end_vote(context, vote_id)
 
 def FullStatus(vote_data, remaining):
-    def format_votes(current, mono_limit, limit, other1, other2):
-        if other1 == 0 and other2 == 0:
+    def format_votes(current, mono_limit, limit, other1, other2, other3, other4):
+        if other1 == 0 and other2 == 0 and other3==0 and other4==0:
             return f"{current}/{mono_limit}"
         return f"{current}/{limit}"
 
@@ -287,7 +319,9 @@ def FullStatus(vote_data, remaining):
         vote_data['votes_mono_limit'],
         vote_data['votes_limit'],
         vote_data['votes_forever'],
-        vote_data['votes_forgive']
+        vote_data['votes_forgive'],
+        vote_data['votes_perm_reader'],
+        vote_data['votes_delete_message']
     )
 
     forever_text = format_votes(
@@ -295,7 +329,9 @@ def FullStatus(vote_data, remaining):
         vote_data['votes_mono_limit'],
         vote_data['votes_limit'],
         vote_data['votes_day'],
-        vote_data['votes_forgive']
+        vote_data['votes_forgive'],
+        vote_data['votes_perm_reader'],
+        vote_data['votes_delete_message']
     )
 
     forgive_text = format_votes(
@@ -303,14 +339,37 @@ def FullStatus(vote_data, remaining):
         vote_data['votes_mono_limit'],
         vote_data['votes_limit'],
         vote_data['votes_day'],
-        vote_data['votes_forever']
+        vote_data['votes_forever'],
+        vote_data['votes_perm_reader'],
+        vote_data['votes_delete_message']
     )
 
+    perm_reader_text = format_votes(
+        vote_data['votes_perm_reader'],
+        vote_data['votes_mono_limit'],
+        vote_data['votes_limit'],
+        vote_data['votes_day'],
+        vote_data['votes_forever'],
+        vote_data['votes_forgive'],
+        vote_data['votes_delete_message']
+    )
+
+    delete_message_text = format_votes(
+        vote_data['votes_delete_message'],
+        vote_data['votes_mono_limit'],
+        vote_data['votes_limit'],
+        vote_data['votes_day'],
+        vote_data['votes_forever'],
+        vote_data['votes_forgive'],
+        vote_data['votes_perm_reader']
+    )
     text = (
         titleText(vote_data['target_user_id'], vote_data['target_full_name'], vote_data['target_username'], vote_data['votes_mono_limit'], vote_data['votes_limit']) +
         f"{day_text} за читателя (запрет писать) 24ч\n"
         f"{forever_text} за бан (лишить доступа) навсегда\n"
         f"{forgive_text} за прощение\n"
+        f"{perm_reader_text} за читателя (запрет писать) навсегда\n"
+        f"{delete_message_text} за удаление сообщения\n"
     )
     return text
 
@@ -328,6 +387,23 @@ async def end_vote(context: CallbackContext, vote_id: tuple) -> None:
         result_message = "забанен (лишен доступа) навсегда. Восстановить его может администратор в настройках группы"
         try:
             await context.bot.delete_message(chat_id, vote_data["original_message_id"])
+        except Exception as e:
+            logger.error(f"Ошибка удаления сообщения: {e}")
+    elif result == 'perm_reader':
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=vote_data["target_user_id"],
+            permissions=ChatPermissions(can_send_messages=False),
+        )
+        result_message = "теперь читатель навсегда"
+        try:
+            await context.bot.delete_message(chat_id, vote_data["original_message_id"])
+        except Exception as e:
+            logger.error(f"Ошибка удаления сообщения: {e}")
+    elif result == 'delete_message':
+        try:
+            await context.bot.delete_message(chat_id, vote_data["original_message_id"])
+            result_message = "сообщение удалено"
         except Exception as e:
             logger.error(f"Ошибка удаления сообщения: {e}")
     else:
@@ -394,6 +470,132 @@ def create_user_link(user_id: int, fullUserName: str, nickname: str) -> str:
     
     return f'<a href="tg://user?id={user_id}">{short_name or f"id{user_id}"}</a>'
 
+async def greet_new_member(update: Update, context: CallbackContext) -> None:
+    logger.info("Сработал обработчик greet_new_member")
+    if update.chat_member.chat.type != ChatType.SUPERGROUP:
+        return
+    chat = update.chat_member.chat
+    user = update.chat_member.new_chat_member.user
+    
+    if update.chat_member.old_chat_member.status == ChatMemberStatus.LEFT:
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=chat.id,
+                user_id=user.id,
+                permissions=ChatPermissions(can_send_messages=False)
+            )
+            
+            user_link = create_user_link(
+                user_id=user.id,
+                fullUserName=user.full_name,
+                nickname=user.username
+            )
+            
+            keyboard = [[InlineKeyboardButton("Пройти тест", callback_data=f"verify:{user.id}")]]
+            message = await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"Привет, {user_link}! Чтобы писать в чате, нужно доказать что ты не бот.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="HTML"
+            )
+            
+            verification_tasks[user.id] = {
+                "message_id": message.message_id,
+                "chat_id": chat.id,
+                "job": context.job_queue.run_once(
+                    delete_verification_message, 
+                    10, 
+                    data=(chat.id, message.message_id, user.id),
+                    name=f"verify_{user.id}"
+                )
+            }
+        except Exception as e:
+            logger.error(f"Ошибка приветствия: {e}")
+
+async def delete_verification_message(context: CallbackContext) -> None:
+    chat_id, message_id, user_id = context.job.data
+    try:
+        await context.bot.delete_message(chat_id, message_id)
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            permissions=ChatPermissions(can_send_messages=False)
+        )
+    except Exception as e:
+        logger.error(f"Ошибка удаления сообщения: {e}")
+    finally:
+        if user_id in verification_tasks:
+            del verification_tasks[user_id]
+
+async def handle_verification_button(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    _, user_id = query.data.split(":")
+    if query.from_user.id != int(user_id):
+        await query.answer("Это не ваш тест!")
+        return
+    
+    try:
+        await context.bot.delete_message(query.message.chat_id, query.message.message_id)
+        if user_id in verification_tasks:
+            verification_tasks[user_id]["job"].schedule_removal()
+            del verification_tasks[user_id]
+            
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="Введи цифрой номер текущего дня недели по Московскому времени (1-7):",
+        )
+        
+        context.user_data["verification_chat"] = query.message.chat_id
+        context.job_queue.run_once(
+            cancel_verification, 
+            30, 
+            data=(query.from_user.id, query.message.chat_id),
+            name=f"verification_{query.from_user.id}"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка верификации: {e}")
+
+async def handle_verification_answer(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    chat_id = context.user_data.get("verification_chat")
+    
+    if not chat_id:
+        return
+    
+    correct_answer = datetime.now(tz=timezone(timedelta(hours=3))).isoweekday() % 7 or 7
+    try:
+        if int(update.message.text) == correct_answer:
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_id,
+                permissions=ChatPermissions(can_send_messages=True)
+            )
+            await update.message.reply_text("✅ Проверка пройдена! Теперь вы можете писать в чате.")
+        else:
+            await update.message.reply_text("❌ Неверный ответ. Обратитесь к администратору.")
+    except ValueError:
+        await update.message.reply_text("Пожалуйста, введите число от 1 до 7")
+    finally:
+        for job in context.job_queue.get_jobs_by_name(f"verification_{user_id}"):
+            job.schedule_removal()
+
+async def cancel_verification(context: CallbackContext) -> None:
+    user_id, chat_id = context.job.data
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            permissions=ChatPermissions(can_send_messages=False)
+        )
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="⏳ Время на проверку истекло. Обратитесь к администратору."
+        )
+    except Exception as e:
+        logger.error(f"Ошибка отмены верификации: {e}")
+
 def main() -> None:
     application = ApplicationBuilder().token(API_KEY).build()
     application.add_handler(CommandHandler("help", help_command))
@@ -408,7 +610,13 @@ def main() -> None:
             start_vote
             )
     )
-    application.add_handler(CallbackQueryHandler(handle_vote))
+    
+    # Не заработало. Режим приветствия (вход нового участника)
+    # application.add_handler(ChatMemberHandler(greet_new_member, ChatMemberHandler.CHAT_MEMBER))
+    # application.add_handler(CallbackQueryHandler(handle_vote))
+    # application.add_handler(CallbackQueryHandler(handle_verification_button, pattern="^verify:"))
+    # application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_verification_answer))
+
     application.run_polling()
 
 if __name__ == "__main__":
